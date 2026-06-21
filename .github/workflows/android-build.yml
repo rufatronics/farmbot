@@ -38,6 +38,15 @@ jobs:
             https://github.com/ggml-org/llama.cpp.git \
             app/src/main/cpp/llama.cpp
 
+      - name: Patch llama-mmap.cpp for Android API < 26
+        run: |
+          # posix_madvise() and POSIX_MADV_* are only in Android Bionic >= API 26.
+          # minSdk is 21, so we tighten the _POSIX_MAPPED_FILES guard to exclude
+          # old Android targets and avoid "undeclared identifier" compile errors.
+          sed -i \
+            's|#ifdef _POSIX_MAPPED_FILES|#if defined(_POSIX_MAPPED_FILES) \&\& (!defined(__ANDROID_API__) || __ANDROID_API__ >= 26)|' \
+            app/src/main/cpp/llama.cpp/src/llama-mmap.cpp
+
       - name: Download models
         run: |
           mkdir -p app/src/main/assets/models
@@ -109,6 +118,12 @@ jobs:
           git clone --depth=1 --branch b8368 \
             https://github.com/ggml-org/llama.cpp.git \
             app/src/main/cpp/llama.cpp
+
+      - name: Patch llama-mmap.cpp for Android API < 26
+        run: |
+          sed -i \
+            's|#ifdef _POSIX_MAPPED_FILES|#if defined(_POSIX_MAPPED_FILES) \&\& (!defined(__ANDROID_API__) || __ANDROID_API__ >= 26)|' \
+            app/src/main/cpp/llama.cpp/src/llama-mmap.cpp
 
       - name: Download models
         run: |
