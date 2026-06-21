@@ -55,10 +55,9 @@ jobs:
           mkdir -p app/src/main/assets/models
           curl --fail -L "https://huggingface.co/rufatronics/crop_doctor/resolve/main/crop_doctor.tflite" \
             -o app/src/main/assets/models/crop_doctor.tflite
-          if ! curl --fail -L "https://huggingface.co/rufatronics/farmbot-gguf/resolve/main/farmbot-Q4_K_M.gguf" \
+          if ! curl --fail -L "https://huggingface.co/rufatronics/farmbot-crop-assistant/resolve/main/farmbot-Q4_K_M.gguf" \
             -o app/src/main/assets/models/farmbot-Q4_K_M.gguf; then
             echo "WARNING: farmbot-Q4_K_M.gguf not found — building without LLM asset (compile check only)"
-            echo "Push the GGUF to rufatronics/farmbot-gguf to get a deployable APK."
           fi
 
       - name: Build arm64 APK
@@ -139,7 +138,7 @@ jobs:
           mkdir -p app/src/main/assets/models
           curl --fail -L "https://huggingface.co/rufatronics/crop_doctor/resolve/main/crop_doctor.tflite" \
             -o app/src/main/assets/models/crop_doctor.tflite
-          curl -L "https://huggingface.co/rufatronics/farmbot-gguf/resolve/main/farmbot-Q4_K_M.gguf" \
+          curl -L "https://huggingface.co/rufatronics/farmbot-crop-assistant/resolve/main/farmbot-Q4_K_M.gguf" \
             -o app/src/main/assets/models/farmbot-Q4_K_M.gguf || true
 
       - name: Build armeabi-v7a APK
