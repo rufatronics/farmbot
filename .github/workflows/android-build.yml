@@ -12,30 +12,10 @@ on:
         required: false
         type: string
 
-# ── Shared setup step (used by both build jobs) ──────────────────────────────
-# Extracted as a reusable block via YAML anchors
-x-common-setup: &common-setup
-  runs-on: ubuntu-latest
-  steps-setup: &steps-setup
-    - name: Checkout
-      uses: actions/checkout@v4
-    - name: Set up JDK 17
-      uses: actions/setup-java@v4
-      with:
-        java-version: '17'
-        distribution: 'temurin'
-    - name: Setup Android SDK
-      uses: android-actions/setup-android@v3
-    - name: Install NDK 26.3 and CMake 3.22
-      run: sdkmanager --install "ndk;26.3.11579264" "cmake;3.22.1"
-
 jobs:
-  # ── arm64-v8a build (guaranteed) ───────────────────────────────────────────
   build-arm64:
     name: Build arm64-v8a
     runs-on: ubuntu-latest
-    outputs:
-      apk-path: ${{ steps.find-apk.outputs.path }}
 
     steps:
       - uses: actions/checkout@v4
@@ -59,7 +39,6 @@ jobs:
           key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
           restore-keys: ${{ runner.os }}-gradle-
 
-      # Pin to b8368 (2026-03-15) — last known-good API before April 2026 rewrite
       - name: Clone llama.cpp @ b8368
         run: |
           git clone --depth=1 --branch b8368 \
@@ -69,37 +48,34 @@ jobs:
       - name: Download models
         run: |
           mkdir -p app/src/main/assets/models
-          echo "▶ Downloading vision model (crop_doctor.tflite)..."
-          curl --fail --location --progress-bar \
+          echo "Downloading vision model..."
+          curl --fail -L \
             "https://huggingface.co/rufatronics/crop_doctor/resolve/main/crop_doctor.tflite" \
             -o app/src/main/assets/models/crop_doctor.tflite
-          echo "  Vision model: $(du -sh app/src/main/assets/models/crop_doctor.tflite | cut -f1)"
+          echo "Vision: $(du -sh app/src/main/assets/models/crop_doctor.tflite | cut -f1)"
 
-          echo "▶ Downloading language model (farmbot-Q4_K_M.gguf)..."
-          if ! curl --fail --location --progress-bar \
+          echo "Downloading language model..."
+          if ! curl --fail -L \
             "https://huggingface.co/rufatronics/farmbot-gguf/resolve/main/farmbot-Q4_K_M.gguf" \
             -o app/src/main/assets/models/farmbot-Q4_K_M.gguf; then
-            echo ""
-            echo "❌ ERROR: Could not download farmbot-Q4_K_M.gguf"
-            echo "   Make sure https://huggingface.co/rufatronics/farmbot-gguf contains farmbot-Q4_K_M.gguf"
-            echo "   If the repo is private, add a HUGGINGFACE_TOKEN secret and re-run."
+            echo "ERROR: farmbot-Q4_K_M.gguf not found at rufatronics/farmbot-gguf"
+            echo "Push the GGUF conversion of the SmolLM2 LoRA to that HuggingFace repo first."
             exit 1
           fi
-          echo "  LLM: $(du -sh app/src/main/assets/models/farmbot-Q4_K_M.gguf | cut -f1)"
+          echo "LLM: $(du -sh app/src/main/assets/models/farmbot-Q4_K_M.gguf | cut -f1)"
 
-      - name: Build arm64 debug APK
+      - name: Build arm64 APK
         run: |
           ./gradlew assembleDebug \
             -Pandroid.injected.build.abi=arm64-v8a \
             --stacktrace 2>&1 | tee build-arm64.log
           grep -q "BUILD SUCCESSFUL" build-arm64.log
 
-      - name: Find APK path
+      - name: Find APK
         id: find-apk
         run: |
-          APK=$(find app/build/outputs/apk/debug -name "*arm64*.apk" | head -1)
+          APK=$(find app/build/outputs/apk/debug -name "*.apk" | head -1)
           echo "path=$APK" >> $GITHUB_OUTPUT
-          echo "APK: $APK ($(du -sh "$APK" | cut -f1))"
 
       - name: Upload arm64 APK
         uses: actions/upload-artifact@v4
@@ -116,7 +92,6 @@ jobs:
           path: build-arm64.log
           retention-days: 3
 
-  # ── armeabi-v7a build (best-effort, 32-bit legacy devices) ─────────────────
   build-armeabi:
     name: Build armeabi-v7a (best-effort)
     runs-on: ubuntu-latest
@@ -156,11 +131,11 @@ jobs:
           curl --fail -L \
             "https://huggingface.co/rufatronics/crop_doctor/resolve/main/crop_doctor.tflite" \
             -o app/src/main/assets/models/crop_doctor.tflite
-          curl --fail -L \
+          curl -L \
             "https://huggingface.co/rufatronics/farmbot-gguf/resolve/main/farmbot-Q4_K_M.gguf" \
             -o app/src/main/assets/models/farmbot-Q4_K_M.gguf || true
 
-      - name: Build armeabi-v7a debug APK
+      - name: Build armeabi-v7a APK
         run: |
           ./gradlew assembleDebug \
             -Pandroid.injected.build.abi=armeabi-v7a \
@@ -170,7 +145,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: farmbot-armeabi-v7a-debug
-          path: app/build/outputs/apk/debug/*armeabi*.apk
+          path: app/build/outputs/apk/debug/*.apk
           retention-days: 14
         continue-on-error: true
 
@@ -182,9 +157,8 @@ jobs:
           path: build-armeabi.log
           retention-days: 3
 
-  # ── Publish: Appetize.io preview + GitHub Release ──────────────────────────
   publish:
-    name: Publish
+    name: Publish Release
     needs: [ build-arm64 ]
     runs-on: ubuntu-latest
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
@@ -203,13 +177,11 @@ jobs:
           path: ./release/armeabi
         continue-on-error: true
 
-      - name: Locate arm64 APK for Appetize
+      - name: Locate arm64 APK
         id: apk
-        run: |
-          APK=$(find ./release/arm64 -name "*.apk" | head -1)
-          echo "arm64=$APK" >> $GITHUB_OUTPUT
+        run: echo "arm64=$(find ./release/arm64 -name '*.apk' | head -1)" >> $GITHUB_OUTPUT
 
-      - name: Upload to Appetize.io (browser preview)
+      - name: Upload to Appetize.io
         uses: appetizeio/github-action-appetize@v1.0.5
         continue-on-error: true
         with:
@@ -228,23 +200,14 @@ jobs:
             Fully offline Android app for smallholder farmers in West/Central Africa.
             No internet required after install.
 
-            ### Models bundled in this APK
             | Model | Size | Purpose |
             |---|---|---|
             | EfficientNet-Lite TFLite | 4.56 MB | Classifies 10 crop diseases from photos |
-            | SmolLM2-135M GGUF Q4_K_M | ~80 MB | Farming advice in African English/pidgin |
+            | SmolLM2-135M Q4_K_M GGUF | ~80 MB | Farming advice in African English/pidgin |
 
-            ### APKs
-            | File | Target | Notes |
-            |---|---|---|
-            | `*arm64-v8a*` | 64-bit Android 5.0+ | Guaranteed build |
-            | `*armeabi-v7a*` | 32-bit legacy devices | Best-effort, may be absent |
+            **APKs:** `arm64-v8a` (guaranteed) · `armeabi-v7a` (best-effort, for 32-bit legacy devices)
 
-            ### First run
-            On first launch both model files are copied from APK assets to internal storage — this takes a few seconds. After that, startup is instant.
-
-            ### Appetize.io
-            Browser-based preview (arm64 build) is uploaded to Appetize. Add `APPETIZE_API_TOKEN` to repo secrets to enable this.
+            Add `APPETIZE_API_TOKEN` to repo secrets for browser-based preview via Appetize.io.
           files: |
             ./release/arm64/*.apk
             ./release/armeabi/*.apk
