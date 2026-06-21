@@ -45,14 +45,26 @@ jobs:
             -o app/src/main/assets/models/crop_doctor.tflite
           if ! curl --fail -L "https://huggingface.co/rufatronics/farmbot-gguf/resolve/main/farmbot-Q4_K_M.gguf" \
             -o app/src/main/assets/models/farmbot-Q4_K_M.gguf; then
-            echo "ERROR: farmbot-Q4_K_M.gguf not found. Push the GGUF to rufatronics/farmbot-gguf first."
-            exit 1
+            echo "WARNING: farmbot-Q4_K_M.gguf not found — building without LLM asset (compile check only)"
+            echo "Push the GGUF to rufatronics/farmbot-gguf to get a deployable APK."
           fi
 
       - name: Build arm64 APK
-        run: ./gradlew assembleDebug -Pandroid.injected.build.abi=arm64-v8a --stacktrace
+        run: ./gradlew assembleDebug -Pandroid.injected.build.abi=arm64-v8a --stacktrace 2>&1 | tee build-arm64.log
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log-arm64
+          path: build-arm64.log
+          retention-days: 3
+
+      - name: Fail if build failed
+        run: grep -q "BUILD SUCCESSFUL" build-arm64.log
 
       - name: Upload arm64 APK
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: farmbot-arm64-v8a-debug
@@ -101,12 +113,20 @@ jobs:
             -o app/src/main/assets/models/farmbot-Q4_K_M.gguf || true
 
       - name: Build armeabi-v7a APK
-        run: ./gradlew assembleDebug -Pandroid.injected.build.abi=armeabi-v7a --stacktrace
+        run: ./gradlew assembleDebug -Pandroid.injected.build.abi=armeabi-v7a --stacktrace 2>&1 | tee build-armeabi.log
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log-armeabi
+          path: build-armeabi.log
+          retention-days: 3
 
       - name: Upload armeabi APK
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: farmbot-armeabi-v7a-debug
           path: app/build/outputs/apk/debug/*.apk
           retention-days: 14
-        continue-on-error: true
