@@ -3,14 +3,7 @@ name: Android Build
 on:
   push:
     branches: [ main ]
-  pull_request:
-    branches: [ main ]
   workflow_dispatch:
-    inputs:
-      release_tag:
-        description: 'Release tag (e.g. v1.0.0) — leave blank for auto build-N'
-        required: false
-        type: string
 
 jobs:
   build-arm64:
@@ -39,7 +32,7 @@ jobs:
           key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
           restore-keys: ${{ runner.os }}-gradle-
 
-      - name: Clone llama.cpp @ b8368
+      - name: Clone llama.cpp at b8368
         run: |
           git clone --depth=1 --branch b8368 \
             https://github.com/ggml-org/llama.cpp.git \
@@ -48,49 +41,23 @@ jobs:
       - name: Download models
         run: |
           mkdir -p app/src/main/assets/models
-          echo "Downloading vision model..."
-          curl --fail -L \
-            "https://huggingface.co/rufatronics/crop_doctor/resolve/main/crop_doctor.tflite" \
+          curl --fail -L "https://huggingface.co/rufatronics/crop_doctor/resolve/main/crop_doctor.tflite" \
             -o app/src/main/assets/models/crop_doctor.tflite
-          echo "Vision: $(du -sh app/src/main/assets/models/crop_doctor.tflite | cut -f1)"
-
-          echo "Downloading language model..."
-          if ! curl --fail -L \
-            "https://huggingface.co/rufatronics/farmbot-gguf/resolve/main/farmbot-Q4_K_M.gguf" \
+          if ! curl --fail -L "https://huggingface.co/rufatronics/farmbot-gguf/resolve/main/farmbot-Q4_K_M.gguf" \
             -o app/src/main/assets/models/farmbot-Q4_K_M.gguf; then
-            echo "ERROR: farmbot-Q4_K_M.gguf not found at rufatronics/farmbot-gguf"
-            echo "Push the GGUF conversion of the SmolLM2 LoRA to that HuggingFace repo first."
+            echo "ERROR: farmbot-Q4_K_M.gguf not found. Push the GGUF to rufatronics/farmbot-gguf first."
             exit 1
           fi
-          echo "LLM: $(du -sh app/src/main/assets/models/farmbot-Q4_K_M.gguf | cut -f1)"
 
       - name: Build arm64 APK
-        run: |
-          ./gradlew assembleDebug \
-            -Pandroid.injected.build.abi=arm64-v8a \
-            --stacktrace 2>&1 | tee build-arm64.log
-          grep -q "BUILD SUCCESSFUL" build-arm64.log
-
-      - name: Find APK
-        id: find-apk
-        run: |
-          APK=$(find app/build/outputs/apk/debug -name "*.apk" | head -1)
-          echo "path=$APK" >> $GITHUB_OUTPUT
+        run: ./gradlew assembleDebug -Pandroid.injected.build.abi=arm64-v8a --stacktrace
 
       - name: Upload arm64 APK
         uses: actions/upload-artifact@v4
         with:
           name: farmbot-arm64-v8a-debug
-          path: ${{ steps.find-apk.outputs.path }}
+          path: app/build/outputs/apk/debug/*.apk
           retention-days: 14
-
-      - name: Upload build log on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-log-arm64
-          path: build-arm64.log
-          retention-days: 3
 
   build-armeabi:
     name: Build armeabi-v7a (best-effort)
@@ -119,7 +86,7 @@ jobs:
           key: ${{ runner.os }}-gradle-armeabi-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
           restore-keys: ${{ runner.os }}-gradle-
 
-      - name: Clone llama.cpp @ b8368
+      - name: Clone llama.cpp at b8368
         run: |
           git clone --depth=1 --branch b8368 \
             https://github.com/ggml-org/llama.cpp.git \
@@ -128,18 +95,13 @@ jobs:
       - name: Download models
         run: |
           mkdir -p app/src/main/assets/models
-          curl --fail -L \
-            "https://huggingface.co/rufatronics/crop_doctor/resolve/main/crop_doctor.tflite" \
+          curl --fail -L "https://huggingface.co/rufatronics/crop_doctor/resolve/main/crop_doctor.tflite" \
             -o app/src/main/assets/models/crop_doctor.tflite
-          curl -L \
-            "https://huggingface.co/rufatronics/farmbot-gguf/resolve/main/farmbot-Q4_K_M.gguf" \
+          curl -L "https://huggingface.co/rufatronics/farmbot-gguf/resolve/main/farmbot-Q4_K_M.gguf" \
             -o app/src/main/assets/models/farmbot-Q4_K_M.gguf || true
 
       - name: Build armeabi-v7a APK
-        run: |
-          ./gradlew assembleDebug \
-            -Pandroid.injected.build.abi=armeabi-v7a \
-            --stacktrace 2>&1 | tee build-armeabi.log
+        run: ./gradlew assembleDebug -Pandroid.injected.build.abi=armeabi-v7a --stacktrace
 
       - name: Upload armeabi APK
         uses: actions/upload-artifact@v4
@@ -148,67 +110,3 @@ jobs:
           path: app/build/outputs/apk/debug/*.apk
           retention-days: 14
         continue-on-error: true
-
-      - name: Upload build log on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-log-armeabi
-          path: build-armeabi.log
-          retention-days: 3
-
-  publish:
-    name: Publish Release
-    needs: [ build-arm64 ]
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-
-    steps:
-      - name: Download arm64 APK
-        uses: actions/download-artifact@v4
-        with:
-          name: farmbot-arm64-v8a-debug
-          path: ./release/arm64
-
-      - name: Download armeabi APK (optional)
-        uses: actions/download-artifact@v4
-        with:
-          name: farmbot-armeabi-v7a-debug
-          path: ./release/armeabi
-        continue-on-error: true
-
-      - name: Locate arm64 APK
-        id: apk
-        run: echo "arm64=$(find ./release/arm64 -name '*.apk' | head -1)" >> $GITHUB_OUTPUT
-
-      - name: Upload to Appetize.io
-        uses: appetizeio/github-action-appetize@v1.0.5
-        continue-on-error: true
-        with:
-          apiToken: ${{ secrets.APPETIZE_API_TOKEN }}
-          appFile: ${{ steps.apk.outputs.arm64 }}
-          platform: android
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ inputs.release_tag || format('build-{0}', github.run_number) }}
-          name: FarmBot ${{ inputs.release_tag || format('Build #{0}', github.run_number) }}
-          body: |
-            ## FarmBot — Offline Crop Disease Assistant
-
-            Fully offline Android app for smallholder farmers in West/Central Africa.
-            No internet required after install.
-
-            | Model | Size | Purpose |
-            |---|---|---|
-            | EfficientNet-Lite TFLite | 4.56 MB | Classifies 10 crop diseases from photos |
-            | SmolLM2-135M Q4_K_M GGUF | ~80 MB | Farming advice in African English/pidgin |
-
-            **APKs:** `arm64-v8a` (guaranteed) · `armeabi-v7a` (best-effort, for 32-bit legacy devices)
-
-            Add `APPETIZE_API_TOKEN` to repo secrets for browser-based preview via Appetize.io.
-          files: |
-            ./release/arm64/*.apk
-            ./release/armeabi/*.apk
-          fail_on_unmatched_files: false
