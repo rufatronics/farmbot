@@ -34,6 +34,9 @@ set(LLAMA_BUILD_SERVER OFF CACHE BOOL "" FORCE)
 set(GGML_CUDA OFF CACHE BOOL "" FORCE)
 set(GGML_VULKAN OFF CACHE BOOL "" FORCE)
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+# posix_madvise() + POSIX_MADV_* are unavailable in Android Bionic < API 26;
+# minSdk is 21 so disable mmap to avoid llama-mmap.cpp compile errors.
+set(LLAMA_MMAP OFF CACHE BOOL "" FORCE)
 
 add_subdirectory(${LLAMA_DIR} llama_build)
 
