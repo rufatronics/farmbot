@@ -40,12 +40,15 @@ jobs:
 
       - name: Patch llama-mmap.cpp for Android API < 26
         run: |
-          # posix_madvise() and POSIX_MADV_* are only in Android Bionic >= API 26.
-          # minSdk is 21, so we tighten the _POSIX_MAPPED_FILES guard to exclude
-          # old Android targets and avoid "undeclared identifier" compile errors.
-          sed -i \
-            's|#ifdef _POSIX_MAPPED_FILES|#if defined(_POSIX_MAPPED_FILES) \&\& (!defined(__ANDROID_API__) || __ANDROID_API__ >= 26)|' \
-            app/src/main/cpp/llama.cpp/src/llama-mmap.cpp
+          python3 << 'PYEOF'
+          path = 'app/src/main/cpp/llama.cpp/src/llama-mmap.cpp'
+          old = '#ifdef _POSIX_MAPPED_FILES'
+          new = '#if defined(_POSIX_MAPPED_FILES) && (!defined(__ANDROID_API__) || __ANDROID_API__ >= 26)'
+          txt = open(path).read()
+          assert old in txt, 'Pattern not found — wrong llama.cpp version?'
+          open(path, 'w').write(txt.replace(old, new))
+          print('Patch applied OK')
+          PYEOF
 
       - name: Download models
         run: |
@@ -121,9 +124,15 @@ jobs:
 
       - name: Patch llama-mmap.cpp for Android API < 26
         run: |
-          sed -i \
-            's|#ifdef _POSIX_MAPPED_FILES|#if defined(_POSIX_MAPPED_FILES) \&\& (!defined(__ANDROID_API__) || __ANDROID_API__ >= 26)|' \
-            app/src/main/cpp/llama.cpp/src/llama-mmap.cpp
+          python3 << 'PYEOF'
+          path = 'app/src/main/cpp/llama.cpp/src/llama-mmap.cpp'
+          old = '#ifdef _POSIX_MAPPED_FILES'
+          new = '#if defined(_POSIX_MAPPED_FILES) && (!defined(__ANDROID_API__) || __ANDROID_API__ >= 26)'
+          txt = open(path).read()
+          assert old in txt, 'Pattern not found — wrong llama.cpp version?'
+          open(path, 'w').write(txt.replace(old, new))
+          print('Patch applied OK')
+          PYEOF
 
       - name: Download models
         run: |
