@@ -14,10 +14,6 @@ if(ANDROID_ABI STREQUAL "armeabi-v7a")
     add_definitions(-DGGML_USE_NEON=1)
 endif()
 
-if(ANDROID_ABI STREQUAL "arm64-v8a")
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -march=armv8.4a+dotprod")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=armv8.4a+dotprod")
-endif()
 
 # ── llama.cpp ─────────────────────────────────────────────────────────────────
 # Cloned by the CI workflow into app/src/main/cpp/llama.cpp before this runs.
