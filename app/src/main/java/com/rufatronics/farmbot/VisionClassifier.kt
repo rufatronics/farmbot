@@ -3,24 +3,19 @@ package com.rufatronics.farmbot
 import android.content.Context
 import android.graphics.Bitmap
 import org.tensorflow.lite.Interpreter
-import org.tensorflow.lite.support.common.FileUtil
 import org.tensorflow.lite.support.image.ImageProcessor
 import org.tensorflow.lite.support.image.TensorImage
 import org.tensorflow.lite.support.image.ops.ResizeOp
 import java.io.File
+import java.io.FileInputStream
 import java.nio.MappedByteBuffer
+import java.nio.channels.FileChannel
 
-/**
- * Wraps the crop_doctor.tflite model (EfficientNet-Lite, 10 classes, 4.56MB).
- * Loaded from app-private storage at runtime, same as the language model,
- * so the whole app works fully offline once both files are bundled/downloaded.
- */
 class VisionClassifier(context: Context, modelFile: File) {
 
     private val interpreter: Interpreter
-    private val inputSize = 224  // standard EfficientNet-Lite input size
+    private val inputSize = 224
 
-    // Must match the order used when your friend trained crop_doctor.tflite
     private val labels = listOf(
         "cassava_mosaic",
         "cocoa_black_pod",
@@ -35,18 +30,14 @@ class VisionClassifier(context: Context, modelFile: File) {
     )
 
     init {
-        val options = Interpreter.Options().apply {
-            setNumThreads(4)
-        }
+        val options = Interpreter.Options().apply { setNumThreads(4) }
         interpreter = Interpreter(loadModelFile(modelFile), options)
     }
 
     private fun loadModelFile(file: File): MappedByteBuffer {
-        return FileUtil.loadMappedFile(file.absolutePath.let {
-            // FileUtil expects a context+asset path normally; for a raw file path
-            // we memory-map it directly.
-            file
-        })
+        val fileInputStream = FileInputStream(file)
+        val fileChannel = fileInputStream.channel
+        return fileChannel.map(FileChannel.MapMode.READ_ONLY, 0, fileChannel.size())
     }
 
     data class Prediction(val label: String, val confidence: Float)

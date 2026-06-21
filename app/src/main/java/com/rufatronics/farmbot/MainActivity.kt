@@ -1,11 +1,13 @@
 package com.rufatronics.farmbot
 
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.os.Bundle
 import android.widget.Button
 import android.widget.EditText
 import android.widget.ProgressBar
 import android.widget.TextView
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
@@ -26,6 +28,23 @@ class MainActivity : AppCompatActivity() {
     private var vision: VisionClassifier? = null
 
     private var modelsLoaded = false
+
+    private val pickImageLauncher = registerForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri ->
+        uri ?: return@registerForActivityResult
+        val bitmap = try {
+            contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it) }
+        } catch (e: Exception) {
+            null
+        }
+        if (bitmap != null) {
+            val rgb = bitmap.copy(Bitmap.Config.ARGB_8888, false)
+            onDiseaseDetected(rgb)
+        } else {
+            statusText.text = "Could not read image — try another photo"
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -56,9 +75,9 @@ class MainActivity : AppCompatActivity() {
         }
 
         scanButton.setOnClickListener {
-            // Hook point for CameraX capture -> Bitmap -> vision.classify(bitmap)
-            // Kept minimal here; wire to CameraX PreviewView + ImageCapture as needed.
-            statusText.text = "Camera capture not wired in this build — use text input for demo"
+            if (modelsLoaded && vision != null) {
+                pickImageLauncher.launch("image/*")
+            }
         }
     }
 
@@ -67,21 +86,18 @@ class MainActivity : AppCompatActivity() {
         progressBar.visibility = ProgressBar.VISIBLE
 
         lifecycleScope.launch {
-            // Step 1: copy bundled assets to internal storage (fast after first run)
             withContext(Dispatchers.IO) {
                 ModelAssets.prepareModels(applicationContext) { msg ->
                     runOnUiThread { statusText.text = msg }
                 }
             }
 
-            // Step 2: load language model into llama.cpp
             statusText.text = "Loading FarmBot language model..."
             val llmPath = ModelAssets.llmFile(applicationContext).absolutePath
             val llmOk = withContext(Dispatchers.Default) {
                 llama.loadModel(llmPath, nThreads = 4, nCtx = 512)
             }
 
-            // Step 3: load vision model
             statusText.text = "Loading vision model..."
             val visionOk = withContext(Dispatchers.Default) {
                 try {
@@ -115,9 +131,7 @@ class MainActivity : AppCompatActivity() {
         statusText.text = "FarmBot is thinking..."
 
         lifecycleScope.launch {
-            val response = withContext(Dispatchers.Default) {
-                engine.respond(question)
-            }
+            val response = withContext(Dispatchers.Default) { engine.respond(question) }
             appendChat("FarmBot", response)
             statusText.text = "FarmBot is ready. Ask me about your crops!"
             sendButton.isEnabled = true
@@ -129,13 +143,18 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch {
             statusText.text = "Analyzing photo..."
             val prediction = withContext(Dispatchers.Default) { v.classify(bitmap) }
-            appendChat("You", "[Photo uploaded — detected: ${prediction.label}, " +
-                    "confidence ${(prediction.confidence * 100).toInt()}%]")
+            appendChat(
+                "You",
+                "[Photo — detected: ${prediction.label}, confidence ${(prediction.confidence * 100).toInt()}%]"
+            )
 
             if (prediction.confidence < 0.5f) {
-                appendChat("FarmBot",
+                appendChat(
+                    "FarmBot",
                     "The image isn't clear enough for me to be confident. " +
-                    "Can you describe what you see on the plant instead?")
+                    "Can you describe what you see on the plant instead?"
+                )
+                statusText.text = "FarmBot is ready. Ask me about your crops!"
                 return@launch
             }
 
